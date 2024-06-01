@@ -17,6 +17,7 @@
 #include <linux/moduleparam.h>
 #include <linux/uaccess.h>
 #include <linux/module.h>
+#include <linux/device.h>
 #include <linux/types.h>
 #include <linux/init.h>
 #include <linux/slab.h>
@@ -26,7 +27,7 @@
 #include "../include/linux_driver.h"
 
 /* module info */
-MODULE_LICENSE("GPL v3");
+MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Alexander (@alkuzin)");
 MODULE_DESCRIPTION("Character device driver for inter-process communication");
 
@@ -40,8 +41,10 @@ static char *device_buffer = NULL;
 static s32   major_number;
 static s32   minor_number;
 
+static struct class *dev_class;
+static struct cdev char_device;
+static struct device *device;
 static dev_t dev_number;
-static struct cdev *char_device;
 
 /** @brief Set of operations that can be performed on a character device in the kernel. */
 static struct file_operations fops = {
@@ -83,24 +86,22 @@ static s32 __init linux_driver_init(void)
 
     printk(KERN_INFO DRIVER_NAME ": set device number <major, minor>: <%d, %d>\n", major_number, minor_number);
 
-    char_device = cdev_alloc();
-    if (char_device == NULL) {
-        unregister_chrdev_region(dev_number, 1);
-        printk(KERN_ERR DRIVER_NAME ": %s\n", "failed to allocate cdev structure");
-        return -ENOMEM;
-    }
-
-    cdev_init(char_device, &fops);
-    ret = cdev_add(char_device, dev_number, 1);
+    cdev_init(&char_device, &fops);
+    ret = cdev_add(&char_device, dev_number, 1);
+    
     if (ret < 0) {
-        cdev_del(char_device);
+        cdev_del(&char_device);
         unregister_chrdev_region(dev_number, 1);
+        
         printk(KERN_ERR DRIVER_NAME ": %s\n", "failed to add cdev");
         return ret;
     }
 
-    printk(KERN_INFO DRIVER_NAME ": %s\n", "initialized character device");
+    dev_class = class_create(DEVICE_CLASS);
+    device    = device_create(dev_class, NULL, dev_number, NULL, DEVICE_NAME);
 
+    printk(KERN_INFO DRIVER_NAME ": initialized character device class \"%s\"\n", DEVICE_CLASS);
+    printk(KERN_INFO DRIVER_NAME ": initialized character device \"%s\"\n", DEVICE_NAME);
     return 0;
 }
 
@@ -109,7 +110,9 @@ static void __exit linux_driver_exit(void)
     kfree(device_buffer);
     printk(KERN_INFO DRIVER_NAME ": %s\n", "ring buffer memory freed successfully");
 
-    cdev_del(char_device);
+    device_destroy(dev_class, dev_number);
+    class_destroy(dev_class);
+    cdev_del(&char_device);
     unregister_chrdev_region(dev_number, 1);
 
     printk(KERN_INFO DRIVER_NAME ": %s\n", "unregistered character device successfully");

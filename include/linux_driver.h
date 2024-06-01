@@ -27,8 +27,9 @@
 
 #include <linux/types.h>
 
-#define DEVICE_NAME "test_task_dev"
-#define DRIVER_NAME "linux_driver"
+#define DEVICE_NAME  "test_task_dev"
+#define DRIVER_NAME  "linux_driver"
+#define DEVICE_CLASS "test_task_dev_class"
 
 /**
  * @brief Driver entry point. 
