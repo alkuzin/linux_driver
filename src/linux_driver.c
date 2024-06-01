@@ -18,6 +18,7 @@
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/init.h>
+#include <linux/slab.h>
 #include <linux/fs.h>
 
 
@@ -60,7 +61,7 @@ static s32 dev_open(struct inode *inode, struct file *file);
  * @param [in] inode - given inode structure.
  * @param [in] file - given file structure.
  * @return 0 - in case of success. 
- * @return -1 - in case of error. 
+ * @return negative number in case of error. 
  */
 static s32 dev_release(struct inode *inode, struct file *file);
 
@@ -94,7 +95,7 @@ static struct file_operations fops = {
     .write   = dev_write
 };
 
-static char buffer[buffer_size];
+static char *device_buffer = NULL;
 static s32  major_number;
 
 
@@ -111,16 +112,52 @@ static s32 __init driver_init(void)
 
     printk(KERN_INFO "linux_driver: registered correctly with major number: %d \n", major_number);
     printk(KERN_INFO "linux_driver: set the ring buffer size to %d bytes\n", buffer_size);
+    printk(KERN_INFO "%s\n", "linux_driver: allocating memory for ring buffer");
 
-    // TODO: implement driver
+    /* GFP_KERNEL means that allocation is performed on behalf of a process running in the kernel space */
+    device_buffer = kmalloc(buffer_size, GFP_KERNEL);
+
+    if (!device_buffer) {
+        printk(KERN_ERR "%s\n", "linux_driver: Failed memory allocation: out of memory");
+        return -ENOMEM;
+    }
+
+    printk(KERN_INFO "%s\n", "linux_driver: successfully allocated ring buffer memory");
     return 0;
 }
 
 static void __exit driver_exit(void)
 {
+    kfree(device_buffer);
+    printk(KERN_INFO "%s\n", "linux_driver: ring buffer memory freed successfully");
+
     unregister_chrdev(major_number, DEVICE_NAME);
-    printk(KERN_INFO "%s\n", "linux_driver: unregister character device");
+    printk(KERN_INFO "%s\n", "linux_driver: unregistered character device successfully");
     printk(KERN_INFO "%s\n", "linux_driver: exit");
+}
+
+static s32 dev_open(struct inode *inode, struct file *file)
+{
+    printk(KERN_DEBUG "%s\n", "linux_driver: open character device");
+    return 0;
+}
+
+static s32 dev_release(struct inode *inode, struct file *file)
+{
+    printk(KERN_DEBUG "%s\n", "linux_driver: release character device");
+    return 0;
+}
+
+static ssize_t dev_read(struct file *file, char *buffer, size_t length, loff_t *offset)
+{
+    printk(KERN_DEBUG "%s\n", "linux_driver: read character device");
+    return 0;
+}
+
+static ssize_t dev_write(struct file *file, const char *buffer, size_t length, loff_t *offset)
+{
+    printk(KERN_DEBUG "%s\n", "linux_driver: write to character device");
+    return 0;
 }
 
 /* Register initialization and exit functions */
