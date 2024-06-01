@@ -15,14 +15,15 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>. */
 
 #include <linux/moduleparam.h>
+#include <linux/uaccess.h>
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/init.h>
 #include <linux/slab.h>
+#include <linux/cdev.h>
 #include <linux/fs.h>
 
-
-#define DEVICE_NAME "test_task_dev"
+#include "../include/linux_driver.h"
 
 /* module info */
 MODULE_LICENSE("GPL v3");
@@ -33,133 +34,112 @@ MODULE_DESCRIPTION("Character device driver for inter-process communication");
 static s32 buffer_size = 1024;
 /* S_IRUGO - read permissions for the owner, group, and others */
 module_param(buffer_size, int, S_IRUGO);
+MODULE_PARM_DESC(buffer_size, "Ring buffer size");
 
-/**
- * @brief Driver entry point. 
- * 
- * @return 0 - in case of success. 
- * @return -1 - in case of error. 
- */
-static s32 __init driver_init(void);
+static char *device_buffer = NULL;
+static s32   major_number;
+static s32   minor_number;
 
-/** @brief Driver exit handler. */
-static void __exit driver_exit(void);
-
-/**
- * @brief Open function for character device.
- * 
- * @param [in] inode - given inode structure.
- * @param [in] file - given file structure.
- * @return 0 - in case of success. 
- * @return -1 - in case of error. 
- */
-static s32 dev_open(struct inode *inode, struct file *file);
-
-/**
- * @brief Release function for character device.
- * 
- * @param [in] inode - given inode structure.
- * @param [in] file - given file structure.
- * @return 0 - in case of success. 
- * @return negative number in case of error. 
- */
-static s32 dev_release(struct inode *inode, struct file *file);
-
-/**
- * @brief Read data from the character device.
- *
- * @param [in] file - given file structure.
- * @param [out] buffer - given buffer to store the read data.
- * @param [in] length - given number of bytes to read.
- * @param [in] offset - given file offset.
- * @return Number of bytes read on success, or an error code on failure.
- */
-static ssize_t dev_read(struct file *file, char *buffer, size_t length, loff_t *offset);
-
-/**
- * @brief Write data to the character device.
- *
- * @param [in] file - given file structure.
- * @param [in] buffer - given buffer of data to be written.
- * @param [in] length - given number of bytes to write.
- * @param [in] offset - given file offset.
- * @return Number of bytes written on success, or an error code on failure.
- */
-static ssize_t dev_write(struct file *file, const char *buffer, size_t length, loff_t *offset);
+static dev_t dev_number;
+static struct cdev *char_device;
 
 /** @brief Set of operations that can be performed on a character device in the kernel. */
 static struct file_operations fops = {
+    .owner   = THIS_MODULE,
     .open    = dev_open,
     .release = dev_release,
     .read    = dev_read,
     .write   = dev_write
 };
 
-static char *device_buffer = NULL;
-static s32  major_number;
 
-
-static s32 __init driver_init(void)
+static s32 __init linux_driver_init(void)
 {
-    printk(KERN_INFO "%s\n", "linux_driver: initialization");
+    s32 ret;
 
-    major_number = register_chrdev(0, DEVICE_NAME, &fops);
-
-    if (major_number < 0) {
-        printk(KERN_ALERT "Failed to register a major number. Status code: %d\n", major_number);
-        return major_number;
-    }
-
-    printk(KERN_INFO "linux_driver: registered correctly with major number: %d \n", major_number);
-    printk(KERN_INFO "linux_driver: set the ring buffer size to %d bytes\n", buffer_size);
-    printk(KERN_INFO "%s\n", "linux_driver: allocating memory for ring buffer");
+    printk(KERN_INFO DRIVER_NAME ": %s\n", "driver initialization");
+    printk(KERN_INFO DRIVER_NAME ": allocating %d bytes for ring buffer\n", buffer_size);
 
     /* GFP_KERNEL means that allocation is performed on behalf of a process running in the kernel space */
     device_buffer = kmalloc(buffer_size, GFP_KERNEL);
-
+    
     if (!device_buffer) {
-        printk(KERN_ERR "%s\n", "linux_driver: Failed memory allocation: out of memory");
+        printk(KERN_ERR DRIVER_NAME ": %s\n", ": failed memory allocation: out of memory");
+        return -ENOMEM;
+    }
+    
+    printk(KERN_INFO DRIVER_NAME ": %s\n", "successfully allocated ring buffer memory");
+    printk(KERN_INFO DRIVER_NAME ": %s\n", "character device initialization");
+    
+    ret = alloc_chrdev_region(&dev_number, 0, 1, DEVICE_NAME);
+    
+    if (ret < 0) {
+        printk(KERN_ERR DRIVER_NAME ": %s\n", "failed to allocate device number");
+        return ret;
+    }
+
+    major_number = MAJOR(dev_number);
+    minor_number = MINOR(dev_number);
+
+    printk(KERN_INFO DRIVER_NAME ": set device number <major, minor>: <%d, %d>\n", major_number, minor_number);
+
+    char_device = cdev_alloc();
+    if (char_device == NULL) {
+        unregister_chrdev_region(dev_number, 1);
+        printk(KERN_ERR DRIVER_NAME ": %s\n", "failed to allocate cdev structure");
         return -ENOMEM;
     }
 
-    printk(KERN_INFO "%s\n", "linux_driver: successfully allocated ring buffer memory");
+    cdev_init(char_device, &fops);
+    ret = cdev_add(char_device, dev_number, 1);
+    if (ret < 0) {
+        cdev_del(char_device);
+        unregister_chrdev_region(dev_number, 1);
+        printk(KERN_ERR DRIVER_NAME ": %s\n", "failed to add cdev");
+        return ret;
+    }
+
+    printk(KERN_INFO DRIVER_NAME ": %s\n", "initialized character device");
+
     return 0;
 }
 
-static void __exit driver_exit(void)
+static void __exit linux_driver_exit(void)
 {
     kfree(device_buffer);
-    printk(KERN_INFO "%s\n", "linux_driver: ring buffer memory freed successfully");
+    printk(KERN_INFO DRIVER_NAME ": %s\n", "ring buffer memory freed successfully");
 
-    unregister_chrdev(major_number, DEVICE_NAME);
-    printk(KERN_INFO "%s\n", "linux_driver: unregistered character device successfully");
-    printk(KERN_INFO "%s\n", "linux_driver: exit");
+    cdev_del(char_device);
+    unregister_chrdev_region(dev_number, 1);
+
+    printk(KERN_INFO DRIVER_NAME ": %s\n", "unregistered character device successfully");
+    printk(KERN_INFO DRIVER_NAME ": %s\n", "exit");
 }
 
 static s32 dev_open(struct inode *inode, struct file *file)
 {
-    printk(KERN_DEBUG "%s\n", "linux_driver: open character device");
+    printk(KERN_DEBUG DRIVER_NAME ": %s\n", "open character device");
     return 0;
 }
 
 static s32 dev_release(struct inode *inode, struct file *file)
 {
-    printk(KERN_DEBUG "%s\n", "linux_driver: release character device");
+    printk(KERN_DEBUG DRIVER_NAME ": %s\n", "release character device");
     return 0;
 }
 
 static ssize_t dev_read(struct file *file, char *buffer, size_t length, loff_t *offset)
 {
-    printk(KERN_DEBUG "%s\n", "linux_driver: read character device");
+    printk(KERN_DEBUG DRIVER_NAME ": %s\n", "read character device");
     return 0;
 }
 
 static ssize_t dev_write(struct file *file, const char *buffer, size_t length, loff_t *offset)
 {
-    printk(KERN_DEBUG "%s\n", "linux_driver: write to character device");
+    printk(KERN_DEBUG DRIVER_NAME ": %s\n", "write to character device");
     return 0;
 }
 
 /* Register initialization and exit functions */
-module_init(driver_init);
-module_exit(driver_exit);
+module_init(linux_driver_init);
+module_exit(linux_driver_exit);
