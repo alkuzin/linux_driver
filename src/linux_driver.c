@@ -14,10 +14,15 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>. */
 
+#include <linux/moduleparam.h>
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/init.h>
 
+/* define module ring buffer size param */
+static s32 buffer_size = 1024;
+/* S_IRUGO - read permissions for the owner, group, and others */
+module_param(buffer_size, int, S_IRUGO);
 
 /* module info */
 MODULE_LICENSE("GPL v3");
@@ -39,6 +44,7 @@ static void driver_exit(void);
 static s32 driver_init(void)
 {
     printk(KERN_INFO "%s\n", "linux_driver: initialization");
+    printk(KERN_INFO "linux_driver: set the ring buffer size to %d bytes\n", buffer_size);
     // TODO: implement driver
     return 0;
 }
