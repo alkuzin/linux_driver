@@ -84,4 +84,15 @@ static ssize_t dev_read(struct file *file, char *buffer, size_t length, loff_t *
  */
 static ssize_t dev_write(struct file *file, const char *buffer, size_t length, loff_t *offset);
 
+/**
+ * @brief Perform device I/O control operation.
+ *
+ * @param [in] file - given file structure.
+ * @param [in] cmd - given command number to perform.
+ * @param [in] arg - given argument for the command.
+ * @return 0 - in case of success. 
+ * @return negative number in case of error. 
+ */
+static long dev_ioctl(struct file *file, u32 cmd, unsigned long arg);
+
 #endif /* _TEST_TASK_LINUX_DRIVER_H_ */ 

@@ -56,11 +56,12 @@ static dev_t dev_number;
 
 /** @brief Set of operations that can be performed on a character device in the kernel. */
 static struct file_operations fops = {
-    .owner   = THIS_MODULE,
-    .open    = dev_open,
-    .release = dev_release,
-    .read    = dev_read,
-    .write   = dev_write
+    .owner          = THIS_MODULE,
+    .open           = dev_open,
+    .release        = dev_release,
+    .read           = dev_read,
+    .write          = dev_write,
+    .unlocked_ioctl = dev_ioctl
 };
 
 
@@ -226,6 +227,28 @@ static ssize_t dev_write(struct file *file, const char *buffer, size_t length, l
     wake_up_interruptible(&read_queue);
 
     return length;
+}
+
+static long dev_ioctl(struct file *file, u32 cmd, unsigned long arg)
+{
+    switch (cmd)
+    {
+        case 0:
+            is_blocking = 1;
+            printk(KERN_INFO DRIVER_NAME ": %s\n", "blocking mode was enabled");
+            break;
+        
+        case 1:
+            is_blocking = 0;
+            printk(KERN_INFO DRIVER_NAME ": %s\n", "blocking mode was disabled");
+            break;
+    
+        default:
+            printk(KERN_ERR DRIVER_NAME ": %s\n", "incorrect IOCTL command");
+            return -EINVAL;
+    }
+
+    return 0;
 }
 
 /* Register initialization and exit functions */
