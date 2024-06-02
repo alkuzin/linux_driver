@@ -19,6 +19,8 @@
 #include <linux/module.h>
 #include <linux/device.h>
 #include <linux/types.h>
+#include <linux/sched.h>
+#include <linux/wait.h>
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/cdev.h>
@@ -36,6 +38,12 @@ static s32 buffer_size = 1024;
 /* S_IRUGO - read permissions for the owner, group, and others */
 module_param(buffer_size, int, S_IRUGO);
 MODULE_PARM_DESC(buffer_size, "Ring buffer size");
+
+/* blocking/non-blocking read/write mode flag */
+static int is_blocking = 1;
+
+static DECLARE_WAIT_QUEUE_HEAD(read_queue);
+static DECLARE_WAIT_QUEUE_HEAD(write_queue);
 
 static char *device_buffer = NULL;
 static s32   major_number;
@@ -58,7 +66,7 @@ static struct file_operations fops = {
 
 static s32 __init linux_driver_init(void)
 {
-    s32    ret;
+    s32 ret;
 
     printk(KERN_INFO DRIVER_NAME ": %s\n", "driver initialization");
     printk(KERN_INFO DRIVER_NAME ": allocating %d bytes for ring buffer\n", buffer_size);
@@ -155,6 +163,15 @@ static ssize_t dev_read(struct file *file, char *buffer, size_t length, loff_t *
     s32     ret;
     
     printk(KERN_DEBUG DRIVER_NAME ": %s\n", "read character device");
+
+    /* handle blocking/non-blocking mode of read operation */
+    if (is_blocking)
+        wait_event_interruptible(read_queue, device_buffer[0] != '\0');
+    else {
+        /* handle empty device buffer */
+        if (device_buffer[0] == '\0')
+            return -EAGAIN;
+    }
     
     /* handle the end of the file */
     if (*offset >= buffer_size)
@@ -179,6 +196,15 @@ static ssize_t dev_write(struct file *file, const char *buffer, size_t length, l
 
     printk(KERN_DEBUG DRIVER_NAME ": %s\n", "write to character device");
 
+    /* handle blocking/non-blocking mode of read operation */
+    if (is_blocking)
+        wait_event_interruptible(write_queue, device_buffer[0] == '\0');
+    else {
+        /* handle filled device buffer */
+        if (device_buffer[0] != '\0')
+            return -EAGAIN;
+    }
+
     /* handle incorrect argument */
     if (length > buffer_size)
         return -EINVAL;
@@ -196,6 +222,8 @@ static ssize_t dev_write(struct file *file, const char *buffer, size_t length, l
         printk(KERN_ERR DRIVER_NAME ": %s\n", "failed to copy data from user space");
         return -EFAULT;
     }
+
+    wake_up_interruptible(&read_queue);
 
     return length;
 }
