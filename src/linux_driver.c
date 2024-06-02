@@ -70,6 +70,8 @@ static s32 __init linux_driver_init(void)
         printk(KERN_ERR DRIVER_NAME ": %s\n", ": failed memory allocation: out of memory");
         return -ENOMEM;
     }
+
+    memset(device_buffer, 0, buffer_size);
     
     printk(KERN_INFO DRIVER_NAME ": %s\n", "successfully allocated ring buffer memory");
     printk(KERN_INFO DRIVER_NAME ": %s\n", "character device initialization");
@@ -149,14 +151,53 @@ static s32 dev_release(struct inode *inode, struct file *file)
 
 static ssize_t dev_read(struct file *file, char *buffer, size_t length, loff_t *offset)
 {
+    ssize_t bytes_read;
+    s32     ret;
+    
     printk(KERN_DEBUG DRIVER_NAME ": %s\n", "read character device");
-    return 0;
+    
+    /* handle the end of the file */
+    if (*offset >= buffer_size)
+        return 0; 
+
+    bytes_read = umin(length, buffer_size - *offset);
+    ret        = copy_to_user(buffer, device_buffer + *offset, bytes_read);
+
+    if (ret) {
+        printk(KERN_ERR DRIVER_NAME ": %s\n", "failed to copy data to user space");
+        return -EFAULT;
+    }
+
+    *offset += bytes_read;
+
+    return bytes_read;
 }
 
 static ssize_t dev_write(struct file *file, const char *buffer, size_t length, loff_t *offset)
 {
+    s32 ret;
+
     printk(KERN_DEBUG DRIVER_NAME ": %s\n", "write to character device");
-    return 0;
+
+    /* handle incorrect argument */
+    if (length > buffer_size)
+        return -EINVAL;
+    
+    /* handle the end of the file */
+    if (*offset >= buffer_size)
+        return 0; 
+    
+    /* Null-terminate the device buffer to treat it as a string */
+    device_buffer[length] = '\0';
+
+    ret = copy_from_user(device_buffer, buffer, length);
+
+    if (ret) {
+        printk(KERN_ERR DRIVER_NAME ": %s\n", "failed to copy data from user space");
+        return -EFAULT;
+    }
+
+    return length;
 }
 
 /* Register initialization and exit functions */
