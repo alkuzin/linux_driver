@@ -16,6 +16,7 @@ re: clean all
 
 init:
 	sudo insmod $(DRIVER)
+	sudo chmod 666 /dev/test_task_dev
 
 deinit:
 	sudo rmmod $(DRIVER_NAME)

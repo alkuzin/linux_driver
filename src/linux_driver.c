@@ -58,7 +58,7 @@ static struct file_operations fops = {
 
 static s32 __init linux_driver_init(void)
 {
-    s32 ret;
+    s32    ret;
 
     printk(KERN_INFO DRIVER_NAME ": %s\n", "driver initialization");
     printk(KERN_INFO DRIVER_NAME ": allocating %d bytes for ring buffer\n", buffer_size);
@@ -73,7 +73,8 @@ static s32 __init linux_driver_init(void)
     
     printk(KERN_INFO DRIVER_NAME ": %s\n", "successfully allocated ring buffer memory");
     printk(KERN_INFO DRIVER_NAME ": %s\n", "character device initialization");
-    
+
+    /* allocating major number */
     ret = alloc_chrdev_region(&dev_number, 0, 1, DEVICE_NAME);
     
     if (ret < 0) {
@@ -86,7 +87,10 @@ static s32 __init linux_driver_init(void)
 
     printk(KERN_INFO DRIVER_NAME ": set device number <major, minor>: <%d, %d>\n", major_number, minor_number);
 
+    /* initializing character device structure */
     cdev_init(&char_device, &fops);
+
+    /* adding character device to the system */
     ret = cdev_add(&char_device, dev_number, 1);
     
     if (ret < 0) {
@@ -97,8 +101,20 @@ static s32 __init linux_driver_init(void)
         return ret;
     }
 
+    /* creating device and device class */
     dev_class = class_create(DEVICE_CLASS);
-    device    = device_create(dev_class, NULL, dev_number, NULL, DEVICE_NAME);
+
+    if (!dev_class) {
+        printk(KERN_ERR DRIVER_NAME ": %s\n", "failed to create device class");
+        return -ENODEV;
+    }
+
+    device = device_create(dev_class, NULL, dev_number, NULL, DEVICE_NAME);
+
+    if (!device) {
+        printk(KERN_ERR DRIVER_NAME ": %s\n", "failed to create device");
+        return -ENODEV;
+    }
 
     printk(KERN_INFO DRIVER_NAME ": initialized character device class \"%s\"\n", DEVICE_CLASS);
     printk(KERN_INFO DRIVER_NAME ": initialized character device \"%s\"\n", DEVICE_NAME);
