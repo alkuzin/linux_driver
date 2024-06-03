@@ -64,4 +64,14 @@ void set_mode(int fd, int mode, dev_buf_info_t *arg);
  */
 void display_buf_info(dev_buf_info_t info);
 
+/**
+ * @brief Display raw time in date format 
+ * 
+ * Displaying format: YEAR-MONTH-DAY HOURS-MINUTES-SECONDS
+ * 
+ * @param [in] descr - given description string.
+ * @param [in] raw_time - given raw_time.
+ */
+void display_time(const char *descr, time_t raw_time);
+
 #endif /* _TEST_TASK_LINUX_DRIVER_TEST_H_ */ 
