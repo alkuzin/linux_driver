@@ -27,7 +27,7 @@
 int main()
 {
     char buffer[BUFFER_SIZE];
-    int  fd;
+    int  fd, ret;
 
     fd = open(DEVICE_NAME, O_RDWR);
     
@@ -37,7 +37,13 @@ int main()
     }
 
     puts("reader: waiting for writer");
-    read(fd, buffer, BUFFER_SIZE);
+    ret = read(fd, buffer, BUFFER_SIZE);
+
+    if (ret == -1) {
+        perror("read error");
+        exit(EXIT_FAILURE);
+    }
+    
     printf("reader: read buffer: \"%s\"\n", buffer);
 
     close(fd);

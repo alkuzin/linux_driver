@@ -16,18 +16,14 @@
 
 /* TEST WRITER */
 
-#include <stdlib.h>
-#include <unistd.h>
-#include <stdio.h>
-#include <fcntl.h>
+#include "test.h"
 
-#define DEVICE_NAME "/dev/test_task_dev"
-#define BUFFER_SIZE 20
 
 int main(void)
 {
-    char buffer[BUFFER_SIZE] = "Message from writer\n";
-    int  fd;
+    char buffer[BUFFER_SIZE] = "Message from writer";
+    dev_buf_info_t info;
+    int fd, ret;
 
     fd = open(DEVICE_NAME, O_RDWR);
     
@@ -35,9 +31,23 @@ int main(void)
         perror("Error opening " DEVICE_NAME);
         exit(EXIT_FAILURE);
     }
+    
+    /* select mode (IOCTL_BLOCK by default) */
+
+    // set_mode(fd, IOCTL_NONBLOCK, &info);
+    // set_mode(fd, IOCTL_BLOCK, &info);
+    // set_mode(fd, IOCTL_INCORRECT_MODE, &info);
 
     printf("writer: writing buffer: \"%s\"\n", buffer);
-    write(fd, buffer, BUFFER_SIZE);
+    ret = write(fd, buffer, BUFFER_SIZE);
+    
+    if (ret == -1) {
+        perror("write error");
+        exit(EXIT_FAILURE);
+    }
+    
+    set_mode(fd, IOCTL_BUFINFO, &info);
+    display_buf_info(info);
 
     close(fd);
     return 0;
