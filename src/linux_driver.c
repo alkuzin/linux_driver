@@ -20,6 +20,7 @@
 #include <linux/device.h>
 #include <linux/types.h>
 #include <linux/sched.h>
+#include <linux/ktime.h>
 #include <linux/wait.h>
 #include <linux/init.h>
 #include <linux/slab.h>
@@ -54,6 +55,8 @@ static struct cdev char_device;
 static struct device *device;
 static dev_t dev_number;
 
+static dev_buf_info_t buffer_info;
+
 /** @brief Set of operations that can be performed on a character device in the kernel. */
 static struct file_operations fops = {
     .owner          = THIS_MODULE,
@@ -71,8 +74,7 @@ static s32 __init linux_driver_init(void)
 
     printk(KERN_INFO DRIVER_NAME ": %s\n", "driver initialization");
     printk(KERN_INFO DRIVER_NAME ": allocating %d bytes for ring buffer\n", buffer_size);
-
-    /* GFP_KERNEL means that allocation is performed on behalf of a process running in the kernel space */
+    
     device_buffer = kmalloc(buffer_size, GFP_KERNEL);
     
     if (!device_buffer) {
@@ -80,9 +82,15 @@ static s32 __init linux_driver_init(void)
         return -ENOMEM;
     }
 
+    /* clear ring buffer */
     memset(device_buffer, 0, buffer_size);
+
+    /* clear device buffer info structure */
+    memset(&buffer_info, 0, sizeof(dev_buf_info_t));
     
     printk(KERN_INFO DRIVER_NAME ": %s\n", "successfully allocated ring buffer memory");
+
+    /* GFP_KERNEL means that allocation is performed on behalf of a process running in the kernel space */
     printk(KERN_INFO DRIVER_NAME ": %s\n", "character device initialization");
 
     /* allocating major number */
@@ -160,7 +168,10 @@ static s32 dev_release(struct inode *inode, struct file *file)
 
 static ssize_t dev_read(struct file *file, char *buffer, size_t length, loff_t *offset)
 {
+    char    date_buf[64];
     ssize_t bytes_read;
+    ktime_t cur_time;
+    struct  tm tm;
     s32     ret;
     
     printk(KERN_DEBUG DRIVER_NAME ": %s\n", "read character device");
@@ -187,13 +198,34 @@ static ssize_t dev_read(struct file *file, char *buffer, size_t length, loff_t *
     }
 
     *offset += bytes_read;
+    
+    /* clear ring buffer */
+    memset(device_buffer, 0, bytes_read);
 
+    cur_time = ktime_get_real_seconds();
+
+    buffer_info.last_read_time  = cur_time;
+    buffer_info.last_read_pid   = current->pid;
+    buffer_info.last_read_owner = current_uid().val;
+    
+    /* display last read time, PID & UID */
+    time64_to_tm(cur_time, 0, &tm);
+    snprintf(date_buf, sizeof(date_buf), DATE_FORMAT, tm.tm_mon + 1, tm.tm_mday, 
+             tm.tm_year + 1900, tm.tm_hour + UTC_OFFSET, tm.tm_min, tm.tm_sec);
+
+    printk(KERN_DEBUG DRIVER_NAME ": dev_read: [%s]\n", date_buf);
+    printk(KERN_DEBUG DRIVER_NAME ": dev_read: PID: %d\n", buffer_info.last_write_pid);
+    printk(KERN_DEBUG DRIVER_NAME ": dev_read: UID: %d\n", buffer_info.last_write_owner);
+    
     return bytes_read;
 }
 
 static ssize_t dev_write(struct file *file, const char *buffer, size_t length, loff_t *offset)
 {
-    s32 ret;
+    ktime_t cur_time;
+    char    date_buf[64];
+    struct  tm tm;
+    s32     ret;
 
     printk(KERN_DEBUG DRIVER_NAME ": %s\n", "write to character device");
 
@@ -214,7 +246,7 @@ static ssize_t dev_write(struct file *file, const char *buffer, size_t length, l
     if (*offset >= buffer_size)
         return 0; 
     
-    /* Null-terminate the device buffer to treat it as a string */
+    /* null-terminate the device buffer to treat it as a string */
     device_buffer[length] = '\0';
 
     ret = copy_from_user(device_buffer, buffer, length);
@@ -225,22 +257,55 @@ static ssize_t dev_write(struct file *file, const char *buffer, size_t length, l
     }
 
     wake_up_interruptible(&read_queue);
+    
+    cur_time = ktime_get_real_seconds();
+    
+    buffer_info.last_write_owner = current_uid().val;
+    buffer_info.last_write_pid   = current->pid;
+    buffer_info.last_write_time  = cur_time;
+    
+    /* display last write time, PID & UID */
+    time64_to_tm(cur_time, 0, &tm);
+    snprintf(date_buf, sizeof(date_buf), DATE_FORMAT, tm.tm_mon + 1, tm.tm_mday, 
+             tm.tm_year + 1900, tm.tm_hour + UTC_OFFSET, tm.tm_min, tm.tm_sec);
+
+    printk(KERN_DEBUG DRIVER_NAME ": dev_write: [%s]\n", date_buf);
+    printk(KERN_DEBUG DRIVER_NAME ": dev_write: PID: %d\n", buffer_info.last_write_pid);
+    printk(KERN_DEBUG DRIVER_NAME ": dev_write: UID: %d\n", buffer_info.last_write_owner);
 
     return length;
 }
 
 static long dev_ioctl(struct file *file, u32 cmd, unsigned long arg)
 {
-    switch (cmd)
-    {
-        case 0:
+    dev_buf_info_t info;
+    s32 ret;
+    
+    switch (cmd) {
+        case IOCTL_BLOCK:
+            printk(KERN_INFO DRIVER_NAME ": %s\n", "IOCTL_BLOCK");
             is_blocking = 1;
             printk(KERN_INFO DRIVER_NAME ": %s\n", "blocking mode was enabled");
             break;
         
-        case 1:
+        case IOCTL_NONBLOCK:
+            printk(KERN_INFO DRIVER_NAME ": %s\n", "IOCTL_NONBLOCK");
             is_blocking = 0;
             printk(KERN_INFO DRIVER_NAME ": %s\n", "blocking mode was disabled");
+            break;
+        
+        case IOCTL_BUFINFO:
+            printk(KERN_INFO DRIVER_NAME ": %s\n", "IOCTL_BUFINFO");
+            
+            info = buffer_info;
+            ret  = copy_to_user((dev_buf_info_t *)arg, &info, sizeof(dev_buf_info_t));
+
+            if (ret) {
+                printk(KERN_ERR DRIVER_NAME ": %s\n", "failed to copy buffer info to user space");
+                return -EFAULT;
+            }
+            
+            printk(KERN_INFO DRIVER_NAME ": %s\n", "buffer info was sent");
             break;
     
         default:

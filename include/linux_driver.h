@@ -26,10 +26,34 @@
 #define _TEST_TASK_LINUX_DRIVER_H_
 
 #include <linux/types.h>
+#include <linux/ktime.h>
 
 #define DEVICE_NAME  "test_task_dev"
 #define DRIVER_NAME  "linux_driver"
 #define DEVICE_CLASS "test_task_dev_class"
+
+/**
+ * @brief Device buffer information structure.
+ * 
+ * Contains information about the time the last operation was
+ * read and written to the buffer, as well as the identifiers 
+ * of the owners and processes that completed these operations.
+ */
+typedef struct {
+    ktime_t last_read_time;
+    ktime_t last_write_time;
+    pid_t  last_read_pid;
+    pid_t  last_write_pid;
+    uid_t  last_read_owner;
+    uid_t  last_write_owner;
+} dev_buf_info_t;
+
+#define IOCTL_BLOCK    0
+#define IOCTL_NONBLOCK 1
+#define IOCTL_BUFINFO _IOR('k', 2, dev_buf_info_t)
+
+#define DATE_FORMAT "%02d-%02d-%ld %02d:%02d:%02d"
+#define UTC_OFFSET  3 /* UTC+3 Moscow time */
 
 /**
  * @brief Driver entry point. 
