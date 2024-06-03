@@ -16,14 +16,25 @@
 
 /* TEST WRITER */
 
+#include <string.h>
+
 #include "test.h"
 
+/** @brief Display list of available commands. */
+static void help(void);
 
-int main(void)
+
+int main(int argc, char **argv)
 {
     char buffer[BUFFER_SIZE] = "Message from writer";
     dev_buf_info_t info;
     int fd, ret;
+     
+    /* handle incorrect number of arguments */
+    if (argc > 2) {
+        help();
+        exit(EXIT_FAILURE);
+    }
 
     fd = open(DEVICE_NAME, O_RDWR);
     
@@ -33,10 +44,18 @@ int main(void)
     }
     
     /* select mode (IOCTL_BLOCK by default) */
-
-    // set_mode(fd, IOCTL_NONBLOCK, &info);
-    // set_mode(fd, IOCTL_BLOCK, &info);
-    // set_mode(fd, IOCTL_INCORRECT_MODE, &info);
+    if (argc == 2) {
+        if (strncmp(argv[1], "--nonblock", 11) == 0)
+            set_mode(fd, IOCTL_NONBLOCK, &info);
+        else if (strncmp(argv[1], "--block", 8) == 0)
+            set_mode(fd, IOCTL_BLOCK, &info);
+        else if (strncmp(argv[1], "--incorrect", 12) == 0)
+            set_mode(fd, IOCTL_INCORRECT_MODE, &info);
+        else {
+            help();
+            exit(EXIT_FAILURE);
+        }
+    }
 
     printf("writer: writing buffer: \"%s\"\n", buffer);
     ret = write(fd, buffer, BUFFER_SIZE);
@@ -51,4 +70,12 @@ int main(void)
 
     close(fd);
     return 0;
+}
+
+static void help(void)
+{
+    puts("Usage: \t./writer [argument]\n"
+    "\n\t--nonblock  \t - test non-blocking mode of read/write operations.\n"
+    "\n\t--block     \t - test blocking mode of read/write operations (default).\n"
+    "\n\t--incorrect \t - test incorrect mode of read/write operations.\n");
 }
